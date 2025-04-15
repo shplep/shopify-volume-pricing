@@ -1,0 +1,212 @@
+{%- comment -%}
+  Cart Price Breaks Snippet
+  Displays volume pricing information in the cart
+  
+  Usage:
+  {% render 'cart-price-breaks' %}
+{%- endcomment -%}
+
+<style>
+.cart-price-breaks {
+  margin: 10px 0;
+  font-size: 0.9em;
+}
+
+.cart-price-breaks-header {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px;
+  background: #f9f9f9;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.cart-price-breaks-content {
+  display: none;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+}
+
+.cart-price-breaks-content.active {
+  display: block;
+}
+
+.cart-price-breaks table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.cart-price-breaks th,
+.cart-price-breaks td {
+  padding: 8px;
+  text-align: left;
+  border-bottom: 1px solid #eee;
+}
+
+.cart-price-breaks th {
+  font-weight: 600;
+}
+
+.cart-price-breaks-toggle {
+  display: inline-block;
+  transition: transform 0.2s;
+}
+
+.cart-price-breaks-toggle.active {
+  transform: rotate(180deg);
+}
+
+.cart-price-breaks-loading {
+  text-align: center;
+  padding: 10px;
+  color: #666;
+}
+
+.cart-price-breaks-error {
+  color: #d00;
+  padding: 10px;
+  text-align: center;
+}
+</style>
+
+<div class="cart-price-breaks" data-loaded="false">
+  <div class="cart-price-breaks-header">
+    <span>Volume Pricing Available</span>
+    <span class="cart-price-breaks-toggle">▼</span>
+  </div>
+  <div class="cart-price-breaks-content">
+    <div class="cart-price-breaks-loading">Loading price breaks...</div>
+    <div class="cart-price-breaks-error" style="display: none;"></div>
+    <div class="cart-price-breaks-table" style="display: none;"></div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const priceBreaksDiv = document.querySelector('.cart-price-breaks');
+  const header = document.querySelector('.cart-price-breaks-header');
+  const content = document.querySelector('.cart-price-breaks-content');
+  const toggle = document.querySelector('.cart-price-breaks-toggle');
+  const loadingDiv = document.querySelector('.cart-price-breaks-loading');
+  const errorDiv = document.querySelector('.cart-price-breaks-error');
+  const tableDiv = document.querySelector('.cart-price-breaks-table');
+
+  if (!priceBreaksDiv || priceBreaksDiv.getAttribute('data-loaded') === 'true') {
+    return;
+  }
+
+  header.addEventListener('click', function() {
+    content.classList.toggle('active');
+    toggle.classList.toggle('active');
+  });
+
+  function formatMoney(amount) {
+    return '$' + (amount/100).toFixed(2);
+  }
+
+  function displayCartPriceBreaks(priceBreaks) {
+    if (!priceBreaks || !priceBreaks.breaks || !Array.isArray(priceBreaks.breaks)) {
+      throw new Error('Invalid price breaks data structure');
+    }
+
+    const table = document.createElement('table');
+    const thead = document.createElement('thead');
+    const tbody = document.createElement('tbody');
+
+    thead.innerHTML = `
+      <tr>
+        <th>Quantity</th>
+        <th>Price</th>
+        <th>Discount</th>
+      </tr>
+    `;
+
+    const basePrice = priceBreaks.base_price;
+    priceBreaks.breaks.forEach((breakPoint, index) => {
+      const row = document.createElement('tr');
+      const isLastBreak = index === priceBreaks.breaks.length - 1;
+      
+      // Format quantity text
+      let qtyText;
+      if (isLastBreak) {
+        qtyText = `${breakPoint.qty}+`;
+      } else {
+        const nextQty = priceBreaks.breaks[index + 1]?.qty;
+        qtyText = nextQty ? `${breakPoint.qty}-${nextQty - 1}` : breakPoint.qty;
+      }
+
+      const discount = ((basePrice - breakPoint.price) / basePrice * 100).toFixed(0);
+      
+      row.innerHTML = `
+        <td>${qtyText}</td>
+        <td>${formatMoney(breakPoint.price * 100)}</td>
+        <td>Save ${discount}%</td>
+      `;
+      
+      tbody.appendChild(row);
+    });
+
+    table.appendChild(thead);
+    table.appendChild(tbody);
+    
+    tableDiv.innerHTML = '';
+    tableDiv.appendChild(table);
+    
+    loadingDiv.style.display = 'none';
+    errorDiv.style.display = 'none';
+    tableDiv.style.display = 'block';
+    
+    priceBreaksDiv.setAttribute('data-loaded', 'true');
+  }
+
+  try {
+    const cartItems = document.querySelectorAll('[data-cart-item]');
+    if (!cartItems.length) {
+      throw new Error('No cart items found');
+    }
+
+    const firstItem = cartItems[0];
+    const productId = firstItem.getAttribute('data-product-id');
+    
+    if (!productId) {
+      throw new Error('Product ID not found');
+    }
+
+    fetch(`/products/${productId}.js`)
+      .then(response => {
+        if (!response.ok) throw new Error('Failed to fetch product data');
+        return response.json();
+      })
+      .then(product => {
+        if (!product.metafields || !product.metafields.custom || !product.metafields.custom.pricebreaks) {
+          throw new Error('No price breaks found for this product');
+        }
+
+        const priceBreaks = JSON.parse(product.metafields.custom.pricebreaks);
+        const firstSku = Object.keys(priceBreaks)[0];
+        
+        if (!firstSku || !priceBreaks[firstSku]) {
+          throw new Error('No valid price breaks data found');
+        }
+
+        displayCartPriceBreaks(priceBreaks[firstSku]);
+      })
+      .catch(error => {
+        console.error('Error loading price breaks:', error);
+        errorDiv.textContent = 'Error loading price breaks data';
+        loadingDiv.style.display = 'none';
+        errorDiv.style.display = 'block';
+      });
+
+  } catch (error) {
+    console.error('Error initializing price breaks:', error);
+    errorDiv.textContent = 'Error initializing price breaks';
+    loadingDiv.style.display = 'none';
+    errorDiv.style.display = 'block';
+  }
+});
+</script>
