@@ -1,0 +1,201 @@
+{%- comment -%}
+  Product Page Price Breaks Snippet
+  Displays volume pricing information on product pages
+  
+  Usage:
+  {% render 'price-breaks-direct' %}
+{%- endcomment -%}
+
+<style>
+.price-breaks {
+  margin: 15px 0;
+  font-size: 0.9em;
+}
+
+.price-breaks-header {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px;
+  background: #f9f9f9;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.price-breaks-content {
+  display: none;
+  padding: 12px;
+  border: 1px solid #ddd;
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+}
+
+.price-breaks-content.active {
+  display: block;
+}
+
+.price-breaks table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 5px;
+}
+
+.price-breaks th,
+.price-breaks td {
+  padding: 8px;
+  text-align: left;
+  border-bottom: 1px solid #eee;
+}
+
+.price-breaks th {
+  font-weight: 600;
+  color: #333;
+}
+
+.price-breaks-toggle {
+  display: inline-block;
+  transition: transform 0.2s;
+}
+
+.price-breaks-toggle.active {
+  transform: rotate(180deg);
+}
+
+.price-breaks-error {
+  color: #d00;
+  padding: 10px;
+  text-align: center;
+}
+</style>
+
+<div class="price-breaks">
+  <div class="price-breaks-header">
+    <span>Volume Pricing Available</span>
+    <span class="price-breaks-toggle">▼</span>
+  </div>
+  <div class="price-breaks-content">
+    <div class="price-breaks-error" style="display: none;"></div>
+    <div class="price-breaks-table"></div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const header = document.querySelector('.price-breaks-header');
+  const content = document.querySelector('.price-breaks-content');
+  const toggle = document.querySelector('.price-breaks-toggle');
+  const errorDiv = document.querySelector('.price-breaks-error');
+  const tableDiv = document.querySelector('.price-breaks-table');
+
+  if (!header || !content || !toggle || !errorDiv || !tableDiv) {
+    console.error('Required price breaks elements not found');
+    return;
+  }
+
+  header.addEventListener('click', function() {
+    content.classList.toggle('active');
+    toggle.classList.toggle('active');
+  });
+
+  function formatMoney(amount) {
+    return '$' + (amount/100).toFixed(2);
+  }
+
+  function displayPriceBreaks(priceBreaks) {
+    if (!priceBreaks || !priceBreaks.breaks || !Array.isArray(priceBreaks.breaks)) {
+      throw new Error('Invalid price breaks data structure');
+    }
+
+    const table = document.createElement('table');
+    const thead = document.createElement('thead');
+    const tbody = document.createElement('tbody');
+
+    thead.innerHTML = `
+      <tr>
+        <th>Quantity</th>
+        <th>Price</th>
+        <th>Discount</th>
+      </tr>
+    `;
+
+    const basePrice = priceBreaks.base_price;
+    priceBreaks.breaks.forEach((breakPoint, index) => {
+      const row = document.createElement('tr');
+      const isLastBreak = index === priceBreaks.breaks.length - 1;
+      
+      // Format quantity text
+      let qtyText;
+      if (isLastBreak) {
+        qtyText = `${breakPoint.qty}+`;
+      } else {
+        const nextQty = priceBreaks.breaks[index + 1]?.qty;
+        qtyText = nextQty ? `${breakPoint.qty}-${nextQty - 1}` : breakPoint.qty;
+      }
+
+      const discount = ((basePrice - breakPoint.price) / basePrice * 100).toFixed(0);
+      
+      row.innerHTML = `
+        <td>${qtyText}</td>
+        <td>${formatMoney(breakPoint.price * 100)}</td>
+        <td>Save ${discount}%</td>
+      `;
+      
+      tbody.appendChild(row);
+    });
+
+    table.appendChild(thead);
+    table.appendChild(tbody);
+    
+    tableDiv.innerHTML = '';
+    tableDiv.appendChild(table);
+    errorDiv.style.display = 'none';
+  }
+
+  try {
+    const variantSelect = document.querySelector('select[name="id"]');
+    const currentVariantId = variantSelect ? variantSelect.value : document.querySelector('[name="id"]').value;
+    
+    if (!currentVariantId) {
+      throw new Error('No variant ID found');
+    }
+
+    // Get price breaks data from metafield
+    const priceBreaks = {{ product.metafields.custom.pricebreaks }};
+    
+    if (!priceBreaks || typeof priceBreaks !== 'object') {
+      throw new Error('No price breaks found for this product');
+    }
+
+    // Display price breaks for current variant
+    if (priceBreaks[currentVariantId]) {
+      displayPriceBreaks(priceBreaks[currentVariantId]);
+    } else {
+      throw new Error('No price breaks found for current variant');
+    }
+
+    // Update price breaks when variant changes
+    if (variantSelect) {
+      variantSelect.addEventListener('change', function() {
+        try {
+          if (priceBreaks[this.value]) {
+            displayPriceBreaks(priceBreaks[this.value]);
+          } else {
+            throw new Error('No price breaks found for selected variant');
+          }
+        } catch (error) {
+          console.error('Error updating price breaks:', error);
+          errorDiv.textContent = 'No volume pricing available for this variant';
+          errorDiv.style.display = 'block';
+          tableDiv.innerHTML = '';
+        }
+      });
+    }
+  } catch (error) {
+    console.error('Error initializing price breaks:', error);
+    errorDiv.textContent = 'No volume pricing available for this product';
+    errorDiv.style.display = 'block';
+    tableDiv.innerHTML = '';
+  }
+});
+</script>
